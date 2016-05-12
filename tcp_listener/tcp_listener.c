@@ -385,7 +385,7 @@ int error_category(int rc) {
 	case EFAULT: 			// The addrlen parameter is too small or addr is not a valid part of the user address space.
 	case EADDRINUSE:	    // The specified address is already in use.
 		if( _debug)
-			fprintf( stderr, "Socket fatal error: %d\n", rc)
+			fprintf( stderr, "Socket fatal error: %d\n", rc);
 		return -1;
 
 	// Retry errors
@@ -405,13 +405,13 @@ int error_category(int rc) {
 	case EACCES:			// Attempt to connect datagram socket to broadcast address failed because setsockopt option SO_BROADCAST is not enabled.
 	case ECONNRESET:
 		if( _debug)
-			fprintf( stderr, "Socket retry error: %d\n", rc)
+			fprintf( stderr, "Socket retry error: %d\n", rc);
 		return -2;
 
 	default:
 		// Fatal error
 		if( _debug)
-			fprintf( stderr, "Socket unknown error: %d\n", rc)
+			fprintf( stderr, "Socket unknown error: %d\n", rc);
 		return -1;
 
 	}
