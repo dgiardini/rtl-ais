@@ -32,8 +32,8 @@ typedef struct t_sockIo {
 static int sockfd;
 static int _debug_nmea = 0;
 static int _debug = 0;
-static int shutdown_in_progress = 0;
 static int _tcp_keep_ais_time = 15;
+static int portno;
 pthread_mutex_t lock;
 
 // Linked list vars.
@@ -65,11 +65,12 @@ int error_category(int rc);
 static void *tcp_listener_fn(void *arg);
 void *handle_remote_close(void *arg);
 void delete_ais_node(P_AIS_MESS p);
+void remove_old_ais_messages( );
 
 #include "tcp_listener.h"
 
 int initTcpSocket(const char *portnumber, int debug_nmea, int tcp_keep_ais_time) {
-	int portno;
+
 	_debug_nmea = debug_nmea;
 	_tcp_keep_ais_time = tcp_keep_ais_time;
 	struct sockaddr_in serv_addr;
@@ -100,15 +101,15 @@ int initTcpSocket(const char *portnumber, int debug_nmea, int tcp_keep_ais_time)
 
 void closeTcpSocket() {
 
-	// The easy solution is sleep for a while before shutdown completes
-	shutdown_in_progress = 1;
+	// wait for socket shutdown complete
+	shutdown( sockfd,2);
 #if defined (__WIN32__)
-	Sleep(3000);
+	sleep(3000);
 #else
 	sleep(3);
 #endif
-	shutdown( sockfd,2);
-	close( sockfd);
+	close(sockfd);
+
 }
 
 // ------------------------------------------------------------
@@ -118,14 +119,15 @@ static void *tcp_listener_fn(void *arg) {
 	int rc;
 	P_TCP_SOCK t;
 
+	fprintf(stderr, "Tcp listen port %d\nAis message timeout with %d\n", portno, _tcp_keep_ais_time);
+
 	while (1) {
 
 		t = init_node();
 
-		if( !shutdown_in_progress)
-			rc = accept_c(t);
+		rc = accept_c(t);
 
-		if (rc == -1)
+		if ( rc == -1)
 			break;
 
 		if (rc == -2) {
@@ -139,6 +141,8 @@ static void *tcp_listener_fn(void *arg) {
 		pthread_create(&t->thread_t, NULL, handle_remote_close, (void *) t);
 
 	}
+	shutdown( sockfd,2);
+	close(sockfd);
 }
 
 // ------------------------------------------------------------
@@ -148,13 +152,17 @@ void *handle_remote_close(void *arg) {
 	unsigned char buff[100];
 	int rc;
 	P_TCP_SOCK t = (P_TCP_SOCK) arg;
-	P_AIS_MESS ais_temp = ais_head;
+	P_AIS_MESS ais_temp;
 	struct timeval timeout;
 	timeout.tv_sec = 10;
 	timeout.tv_usec = 0;
 	setsockopt(t->sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
+	// get rid of old messages before send
+	remove_old_ais_messages();
+
 	// send saved ais_messages to new socket
+	ais_temp = ais_head;
 	while (ais_temp != NULL) {
 		rc = send(t->sock, ais_temp->message, ais_temp->length, 0);
 		if( _debug)
@@ -168,6 +176,7 @@ void *handle_remote_close(void *arg) {
 		if( rc < 0) {
 			if( _debug)
 				fprintf( stdout, "Some socket error happend %d\n", errno);
+			break;
 		}
 		else if( rc == 0) {
 			if( _debug)
@@ -197,16 +206,17 @@ int accept_c(P_TCP_SOCK p_tcp_sock) {
 	/* wait for connection on local port.*/
 	if ((p_tcp_sock->sock = accept(sockfd, (struct sockaddr*) &p_tcp_sock->cli_addr, &clilen)) < 0) {
 		fprintf(stderr, "Failed to accept socket!, error = %d\n", errno);
-		error_category(errno);
+		if( errno	 == 22) return -1;
+		return error_category(errno);
 	}
 
 	if (setsockopt(p_tcp_sock->sock, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen) < 0) {
 		fprintf(stderr, "Failed to set option keepalive!, error = %d\n", errno);
-		error_category(errno);
+		return error_category(errno);
 	}
 
+	sprintf(p_tcp_sock->from_ip, "%.*s", 19, inet_ntoa(p_tcp_sock->cli_addr.sin_addr));
 	if (_debug) {
-		sprintf(p_tcp_sock->from_ip, "%.*s", 19, inet_ntoa(p_tcp_sock->cli_addr.sin_addr));
 		fprintf(stdout, "connect from %s\n", p_tcp_sock->from_ip);
 	}
 
@@ -216,22 +226,50 @@ int accept_c(P_TCP_SOCK p_tcp_sock) {
 }
 
 // ------------------------------------------------------------
+// Remove messages older than timeout
+// ------------------------------------------------------------
+void remove_old_ais_messages( ) {
+	struct timeval now;
+	P_AIS_MESS temp_1;
+	P_AIS_MESS temp;
+	gettimeofday(&now, NULL);
+
+	temp = ais_head;
+
+	while (temp != NULL) {
+		if ((int) (now.tv_sec - temp->timestamp.tv_sec) > _tcp_keep_ais_time) {
+			if( _debug)
+				fprintf(stdout, "remove mess <%.*s>, timeout %ld\n", temp->length, temp->message, (long) (now.tv_sec - temp->timestamp.tv_sec));
+			temp_1 = temp->next;
+			pthread_mutex_lock(&ais_lock);
+			delete_ais_node(temp);
+			pthread_mutex_unlock(&ais_lock);
+			temp = temp_1;
+		} else {
+			temp = temp->next;
+		}
+	}
+}
+
+// ------------------------------------------------------------
 // send ais message to all clients
 // ------------------------------------------------------------
 int add_nmea_ais_message(const char * mess, unsigned int length) {
 
 	P_AIS_MESS new_node;
-	P_AIS_MESS temp;
-	P_AIS_MESS temp_1;
-	struct timeval now;
-	gettimeofday(&now, NULL);
+
+	// remove eventually old messages
+	remove_old_ais_messages();
 
 	pthread_mutex_lock(&ais_lock);
+
 	// allocate an add the new message
 	new_node = (P_AIS_MESS) malloc(sizeof(AIS_MESS));
 	strncpy(new_node->message, mess, length);
 	new_node->length = length;
 	gettimeofday(&new_node->timestamp, NULL);
+
+
 	if (ais_head == NULL) {
 		ais_head = new_node;
 		ais_end = new_node;
@@ -239,18 +277,6 @@ int add_nmea_ais_message(const char * mess, unsigned int length) {
 	ais_end->next = new_node;
 	new_node->next = NULL;
 	ais_end = new_node;
-
-	// now get rid of old messages
-	temp = ais_head;
-	while (temp != NULL) {
-		if ( (now.tv_sec - temp->timestamp.tv_sec) > _tcp_keep_ais_time) {
-			temp_1 = temp->next;
-			delete_ais_node(temp);
-			temp = temp_1;
-		} else {
-			temp = temp->next;
-		}
-	}
 
 	pthread_mutex_unlock(&ais_lock);
 
@@ -351,35 +377,41 @@ int error_category(int rc) {
 #else
 	switch (rc) {
 	// Fatal errors
-	case EINVAL:		 // The listen function was not invoked prior to accept.
-	case ENOTSOCK:	    // The descriptor is not a socket.
+	case EINVAL:		 	// The listen function was not invoked prior to accept.
+	case ENOTSOCK:	    	// The descriptor is not a socket.
 	case EOPNOTSUPP:	    // The referenced socket is not a type that supports connection-oriented service.
-	case EPROTONOSUPPORT: // The specified protocol is not supported.
+	case EPROTONOSUPPORT: 	// The specified protocol is not supported.
 	case EPROTOTYPE:
-	case EFAULT: // The addrlen parameter is too small or addr is not a valid part of the user address space.
+	case EFAULT: 			// The addrlen parameter is too small or addr is not a valid part of the user address space.
 	case EADDRINUSE:	    // The specified address is already in use.
+		if( _debug)
+			fprintf( stderr, "Socket fatal error: %d\n", rc)
 		return -1;
 
-		// Retry errors
-	case ENETDOWN:	    // The network subsystem has failed.
-	case EINTR:	// The (blocking) call was canceled through WSACancelBlockingCall.
-	case EINPROGRESS:// A blocking Windows Sockets 1.1 call is in progress, or the service provider is still processing a callback function.
-	case EMFILE:	// The queue is nonempty upon entry to accept and there are no descriptors available.
+	// Retry errors
+	case ENETDOWN:	    	// The network subsystem has failed.
+	case EINTR:				// The (blocking) call was canceled through.
+	case EINPROGRESS:		// A blocking call is in progress, or the service provider is still processing a callback function.
+	case EMFILE:			// The queue is nonempty upon entry to accept and there are no descriptors available.
 	case ENOBUFS:			// No buffer space is available.
-	case EWOULDBLOCK:			// The socket is marked as nonblocking and no connections are present to be accepted.
+	case EWOULDBLOCK:		// The socket is marked as nonblocking and no connections are present to be accepted.
 	case EALREADY:			// A nonblocking connect call is in progress on the specified socket.
-	case EADDRNOTAVAIL: // The specified address is not available from the local machine.
-	case EAFNOSUPPORT: // Addresses in the specified family cannot be used with this socket.
-	case ECONNREFUSED:    // The attempt to connect was forcefully rejected.
-	case EISCONN:    // The socket is already connected (connection-oriented sockets only).
-	case ENETUNREACH:    // The network cannot be reached from this host at this time.
-	case ETIMEDOUT:	// Attempt to connect timed out without establishing a connection.
-	case EACCES:// Attempt to connect datagram socket to broadcast address failed because setsockopt option SO_BROADCAST is not enabled.
+	case EADDRNOTAVAIL: 	// The specified address is not available from the local machine.
+	case EAFNOSUPPORT: 		// Addresses in the specified family cannot be used with this socket.
+	case ECONNREFUSED:    	// The attempt to connect was forcefully rejected.
+	case EISCONN:    		// The socket is already connected (connection-oriented sockets only).
+	case ENETUNREACH:    	// The network cannot be reached from this host at this time.
+	case ETIMEDOUT:			// Attempt to connect timed out without establishing a connection.
+	case EACCES:			// Attempt to connect datagram socket to broadcast address failed because setsockopt option SO_BROADCAST is not enabled.
 	case ECONNRESET:
+		if( _debug)
+			fprintf( stderr, "Socket retry error: %d\n", rc)
 		return -2;
 
 	default:
 		// Fatal error
+		if( _debug)
+			fprintf( stderr, "Socket unknown error: %d\n", rc)
 		return -1;
 
 	}
