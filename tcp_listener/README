@@ -12,9 +12,3 @@ Use: rtl_ais [options] [outputfile]
 ...
 
 
-TODO: Fix to run under OSX and Windows. (I'll do the windows part if others find it usefull) 
-      Makefile must be included in rtl-ais Makefile
-      Merge of rtl-ais.c, aisdecoder.c and aisdecoder.h if it is found usefull.
-      Daemonize rtl-ais. (I'll do it if others find it usefull)
-      
-      
