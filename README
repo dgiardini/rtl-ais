@@ -3,6 +3,8 @@ rtl_ais, a simple AIS tuner  and generic dual-frequency FM demodulator
 OS: Linux-Windows-OSX.
 ----------------------------------------------------------------------
 
+Suggestion: enable GitHub Issues at https://github.com/dgiardini/rtl-ais/settings
+
 ------------
 COMMAND LINE
 ------------
