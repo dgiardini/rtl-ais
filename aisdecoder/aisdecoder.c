@@ -151,7 +151,7 @@ int send_nmea( const char *sentence, unsigned int length) {
         return 0;
 }
 
-int init_ais_decoder(char * host, char * port ,int show_levels,int _debug_nmea,int buf_len,int time_print_stats, int use_tcp_listener, int tcp_keep_ais_time, int add_sample_num){
+int init_ais_decoder(char * host, char * port ,int show_levels,int _debug_nmea,int buf_len,int time_print_stats, int use_tcp_listener, int tcp_keep_ais_time, int tcp_stream_forever, int add_sample_num){
 	debug_nmea=_debug_nmea;
 	use_tcp = use_tcp_listener;
 	pthread_mutex_init(&message_mutex, NULL);
@@ -165,7 +165,7 @@ int init_ais_decoder(char * host, char * port ,int show_levels,int _debug_nmea,i
 		}
 	}
 	else {
-		if (!initTcpSocket(port, debug_nmea, tcp_keep_ais_time)) {
+		if (!initTcpSocket(port, debug_nmea, tcp_keep_ais_time, tcp_stream_forever)) {
 			return EXIT_FAILURE;
 		}
 	}
