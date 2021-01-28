@@ -76,7 +76,7 @@ void usage(void)
 static volatile int do_exit = 0;
 static void sighandler(int signum)
 {
-        signum = signum;
+        (void)(signum); // unused argument
 	fprintf(stderr, "Signal caught, exiting!\n");
 	do_exit = 1;
 }

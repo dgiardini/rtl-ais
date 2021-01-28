@@ -648,7 +648,7 @@ int rtl_ais_isactive(struct rtl_ais_context *ctx)
 
 const char *rtl_ais_next_message(struct rtl_ais_context *ctx)
 {
-        ctx = ctx; //unused for now
+        (void)(ctx); //unused for now
         return aisdecoder_next_message();
 }
 

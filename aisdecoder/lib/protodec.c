@@ -163,7 +163,7 @@ void protodec_generate_nmea(struct demod_state_t *d, int bufferlen, int fillbits
     int inc;
 
     unsigned char sentences, sentencenum, nmeachk, letter;
-    received_t=received_t; // not used here, avoid compiling warnings
+    (void)(received_t); // not used here, avoid compiling warnings
 	//6bits to nmea-ascii. One sentence len max 82char
 	//inc. head + tail.This makes inside datamax 62char multipart, 62 single
     senlen = 56;		//this is normally not needed.For testing only. May be fixed number
