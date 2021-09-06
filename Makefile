@@ -1,6 +1,6 @@
 CFLAGS?=-O2 -g -Wall -W 
 CFLAGS+= -I./aisdecoder -I ./aisdecoder/lib -I./tcp_listener
-LDFLAGS+=-lpthread -lm
+LDFLAGS+=-lpthread -lm  -L /usr/lib/arm-linux-gnueabihf/ 
 
 ifeq ($(PREFIX),)
     PREFIX := /usr/local
