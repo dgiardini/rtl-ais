@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <sys/time.h>
+#include <sys/select.h>
 
 #if defined (__WIN32__)
 	#include <winsock2.h>
@@ -30,12 +31,18 @@ typedef struct t_sockIo {
 	char from_ip[20];
 	struct t_sockIo *next;
 
+	// An active listener thread has a `pipe()` allocated, whose file
+	// descriptors are stored here. This pipe is written to with new
+	// AIS messages as they are decoded if `_tcp_stream_forever` is set.
+	int msgpipe[2];
+
 } TCP_SOCK, *P_TCP_SOCK;
 
 static int sockfd;
 static int _debug_nmea = 0;
 static int _debug = 0;
 static int _tcp_keep_ais_time = 15;
+static int _tcp_stream_forever = 0;
 static int portno;
 pthread_mutex_t lock=PTHREAD_MUTEX_INITIALIZER;;
 
@@ -51,7 +58,6 @@ typedef struct t_ais_mess {
 	int length;
 	struct timeval timestamp;
 	struct t_ais_mess *next;
-
 } AIS_MESS, *P_AIS_MESS;
 
 // Linked list ais messages.
@@ -73,10 +79,10 @@ void remove_old_ais_messages( );
 
 #include "tcp_listener.h"
 
-int initTcpSocket(const char *portnumber, int debug_nmea, int tcp_keep_ais_time) {
-
+int initTcpSocket(const char *portnumber, int debug_nmea, int tcp_keep_ais_time, int tcp_stream_forever) {
 	_debug_nmea = debug_nmea;
 	_tcp_keep_ais_time = tcp_keep_ais_time;
+	_tcp_stream_forever = tcp_stream_forever;
 	struct sockaddr_in serv_addr;
 #if defined (__WIN32__)
 	WSADATA wsaData;
@@ -93,6 +99,12 @@ int initTcpSocket(const char *portnumber, int debug_nmea, int tcp_keep_ais_time)
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr.s_addr = INADDR_ANY;
 	serv_addr.sin_port = htons(portno);
+
+	if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0) {
+		fprintf(stderr, "setsockopt(SO_REUSEADDR) failed! error %d\n", errno);
+		return 0;
+	}
+
 	if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
 		fprintf(stderr, "Failed to bind socket! error %d\n", errno);
 		return 0;
@@ -126,8 +138,8 @@ void closeTcpSocket() {
 // ------------------------------------------------------------
 static void *tcp_listener_fn(void *arg) {
 	int rc;
-	arg=arg; // not used, avoid compiling warnings
 	P_TCP_SOCK t;
+	(void)(arg); // not used, avoid compiling warnings
 
 	fprintf(stderr, "Tcp listen port %d\nAis message timeout with %d\n", portno, _tcp_keep_ais_time);
 
@@ -165,23 +177,17 @@ static void *tcp_listener_fn(void *arg) {
 }
 
 // ------------------------------------------------------------
-// thread func for hanling client close
+// thread func for handling a remote TCP client
 // ------------------------------------------------------------
 void *handle_remote_close(void *arg) {
-	unsigned char buff[100];
-	int rc;
 	P_TCP_SOCK t = (P_TCP_SOCK) arg;
 	P_AIS_MESS ais_temp;
-	struct timeval timeout;
-	timeout.tv_sec = 10;
-	timeout.tv_usec = 0;
-	setsockopt(t->sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
-	// get rid of old messages before send
-	remove_old_ais_messages();
 
-	// send saved ais_messages to new socket
+	// On connect, send all saved ais_messages to new socket
+	pthread_mutex_lock(&ais_lock);
 	ais_temp = ais_head;
 	while (ais_temp != NULL) {
+		int rc;
 		if (ais_temp->plmess != NULL)
 			rc = send(t->sock, ais_temp->plmess, ais_temp->length, 0);
 		else
@@ -190,28 +196,68 @@ void *handle_remote_close(void *arg) {
 			fprintf( stdout, "%ld: Send to %s, <%.*s>, rc=%d\n",ais_temp->timestamp.tv_sec, t->from_ip, ais_temp->length, ais_temp->message, rc);
 		ais_temp = ais_temp->next;
 	}
+	pthread_mutex_unlock(&ais_lock);
 
-	while(1){
+	while (1) {
+		fd_set fds;
+		int res;
+		int msgfd = t->msgpipe[0];
+		const int nfds = (t->sock > msgfd ? t->sock : msgfd) + 1;
 
-		rc = recv(t->sock, (char *)buff, 99, 0);
-		if( rc < 0) {
-
-			// check timeout
-			if (errno == EAGAIN)
-				continue;
-			if( _debug)
-				fprintf( stdout, "Some socket error happend %d\n", errno);
+		// Listen on the client socket, and on the internal pipe which receives
+		// new messages. (New messages will only be sent to this pipe when the
+		// program is launched with the '-k' flag.)
+		FD_ZERO(&fds);
+		FD_SET(t->sock, &fds);
+		FD_SET(msgfd, &fds);
+		
+		res = pselect(nfds, &fds, NULL, NULL, NULL, NULL);
+		if (res < 0) {
+			if (_debug)
+				perror("select error");
 			break;
 		}
-		else if( rc == 0) {
-			if( _debug)
-				fprintf( stdout, "client gracefully closed the socket\n");
-	    	break;
+
+		// Service remote client socket: If the client sends any data, close the
+		// socket (legacy behavior).
+		if (FD_ISSET(t->sock, &fds)) {
+			unsigned char buff[100];
+			int rc;
+			rc = recv(t->sock, (char *)buff, 99, 0);
+			if (rc < 0) {
+				if (_debug && errno != EAGAIN)
+					perror("socket error");
+				break;
+			} else if (rc >= 0) {
+				if (_debug)
+					fprintf(stdout, "client closed the socket\n");
+				break;
+			}
 		}
-		else {
-			if( _debug)
-				fprintf( stdout, "Something receiced from client <%.*s>\n", rc, buff );
-			break;
+
+		// If new messages became available internally, send them to the client.
+		if (FD_ISSET(msgfd, &fds)) {
+			unsigned char buff[1024];
+			int rc;
+			rc = read(msgfd, (char *)buff, 1024);
+			if (rc < 0) {
+				if (_debug) {
+					perror("pipe error");
+				}
+				break;
+			} else if (rc == 0) {
+				if (_debug) {
+					fprintf(stderr, "pipe closed\n");
+				}
+				break;
+			}
+
+			rc = send(t->sock, buff, rc, 0);
+			if (rc < 0) {
+				if (_debug)
+					perror("error writing to client");
+				break;
+			}
 		}
 	}
 	shutdown(t->sock, 2);
@@ -287,7 +333,6 @@ void remove_old_ais_messages( ) {
 // send ais message to all clients
 // ------------------------------------------------------------
 int add_nmea_ais_message(const char * mess, unsigned int length) {
-
 	P_AIS_MESS new_node;
 
 	// remove eventually old messages
@@ -312,7 +357,6 @@ int add_nmea_ais_message(const char * mess, unsigned int length) {
 	new_node->length = length;
 	gettimeofday(&new_node->timestamp, NULL);
 
-
 	if (ais_head == NULL) {
 		ais_head = new_node;
 		ais_end = new_node;
@@ -322,6 +366,21 @@ int add_nmea_ais_message(const char * mess, unsigned int length) {
 	ais_end = new_node;
 
 	pthread_mutex_unlock(&ais_lock);
+
+	// Send the message to all active clients.
+	if (_tcp_stream_forever) {
+		P_TCP_SOCK tcp_client;
+
+		pthread_mutex_lock(&lock);
+		tcp_client = head;
+		while (tcp_client != NULL) {
+			int retval;
+			retval = write(tcp_client->msgpipe[1], mess, length);
+			tcp_client = tcp_client->next;
+		}
+		pthread_mutex_unlock(&lock);
+	}
+
 
 	return 0;
 }
@@ -358,6 +417,7 @@ void delete_ais_node(P_AIS_MESS p) {
 // ------------------------------------------------------------
 P_TCP_SOCK init_node() {
 	P_TCP_SOCK ptr;
+	int pipestatus;
 
 	ptr = (P_TCP_SOCK) malloc(sizeof(TCP_SOCK));
 
@@ -365,9 +425,17 @@ P_TCP_SOCK init_node() {
 
 	if (ptr == NULL)
 		return (P_TCP_SOCK) NULL;
-	else {
-		return ptr;
+
+	// Allocate pipe for publishing newly-arriving messages to
+	// connected clients.
+	pipestatus = pipe(ptr->msgpipe);
+	if (pipestatus < 0) {
+		perror("error allocating pipe");
+		free(ptr);
+		return (P_TCP_SOCK) NULL;
 	}
+
+	return ptr;
 }
 
 // ------------------------------------------------------------

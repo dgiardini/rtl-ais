@@ -27,7 +27,7 @@ struct rtl_ais_config
 
     int oversample, dc_filter, use_internal_aisdecoder;
     int seconds_for_decoder_stats;
-    int use_tcp_listener, tcp_keep_ais_time;
+    int use_tcp_listener, tcp_keep_ais_time, tcp_stream_forever;
     /* Aisdecoder */
     int	show_levels, debug_nmea;
     char *port, *host, *filename;

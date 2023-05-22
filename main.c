@@ -55,6 +55,7 @@ void usage(void)
 		"\t[-P port (default: 10110)]\n"
 		"\t[-T use TCP communication, rtl-ais is tcp server ( -h is ignored)\n"
 		"\t[-t time to keep ais messages in sec, using tcp listener (default: 15)\n"
+		"\t[-k keep TCP socket open and write new messages to it as they arrive\n"
 		"\t[-n log NMEA sentences to console (stderr) (default off)]\n"
 		"\t[-I add sample index to NMEA messages (default off)]\n"
 		"\t[-L log sound levels to console (stderr) (default off)]\n\n"
@@ -76,7 +77,7 @@ void usage(void)
 static volatile int do_exit = 0;
 static void sighandler(int signum)
 {
-        signum = signum;
+        (void)(signum); // unused argument
 	fprintf(stderr, "Signal caught, exiting!\n");
 	do_exit = 1;
 }
@@ -105,7 +106,7 @@ int main(int argc, char **argv)
         config.host = strdup("127.0.0.1");
         config.port = strdup("10110");
         
-	while ((opt = getopt(argc, argv, "l:r:s:o:EODd:g:p:RATIt:P:h:nLS:?")) != -1)
+	while ((opt = getopt(argc, argv, "l:r:s:o:EODd:g:p:RATIkt:P:h:nLS:?")) != -1)
 	{
 		switch (opt) {
 		case 'l':
@@ -152,12 +153,15 @@ int main(int argc, char **argv)
 		case 'P':
 			config.port=strdup(optarg);
 			break;
-                case 'T':
-                        config.use_tcp_listener=1;
-                        break;
-                case 't':
-                        config.tcp_keep_ais_time = atoi(optarg);
-                        break;
+		case 'T':
+			config.use_tcp_listener=1;
+			break;
+		case 't':
+			config.tcp_keep_ais_time = atoi(optarg);
+			break;
+		case 'k':
+			config.tcp_stream_forever = 1;
+			break;
 		case 'h':
 			config.host=strdup(optarg);
 			break;

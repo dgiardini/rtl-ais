@@ -5,38 +5,30 @@ LDFLAGS+=-lpthread -lm  -L /usr/lib/arm-linux-gnueabihf/
 ifeq ($(PREFIX),)
     PREFIX := /usr/local
 endif
+
 UNAME := $(shell uname)
 ifeq ($(UNAME),Linux)
-#Conditional for Linux
-CFLAGS+= $(shell pkg-config --cflags librtlsdr)
-LDFLAGS+=$(shell pkg-config --libs librtlsdr)
-
+	CFLAGS += $(shell pkg-config --cflags librtlsdr libusb-1.0)
+	LDFLAGS +=$(shell pkg-config --libs librtlsdr libusb-1.0)
+else ifeq ($(UNAME),Darwin)
+	CFLAGS += $(shell pkg-config --cflags librtlsdr libusb-1.0)
+	LDFLAGS += $(shell pkg-config --libs librtlsdr libusb-1.0)
 else
-#
-#ADD THE CORRECT PATH FOR LIBUSB AND RTLSDR
-#TODO:
-#    CMAKE will be much better or create a conditional pkg-config
+	#ADD THE CORRECT PATH FOR LIBUSB AND RTLSDR
+	#TODO:
+	#    CMAKE will be much better or create a conditional pkg-config
 
+	# RTLSDR
+	RTLSDR_INCLUDE=/tmp/rtl-sdr/include
+	RTLSDR_LIB=/tmp/rtl-sdr/build/src
 
-# RTLSDR
-RTLSDR_INCLUDE=/tmp/rtl-sdr/include
-RTLSDR_LIB=/tmp/rtl-sdr/build/src
+	# LIBUSB
+	LIBUSB_INCLUDE=/opt/homebrew/Cellar/libusb/1.0.24/include
+	LIBUSB_LIB=/opt/homebrew/Cellar/libusb/1.0.24/lib
 
-# LIBUSB
-LIBUSB_INCLUDE=/tmp/libusb/include/libusb-1.0
-LIBUSB_LIB=/tmp/libusb/lib
-
-ifeq ($(UNAME),Darwin)
-#Conditional for OSX
-CFLAGS+= -I/usr/local/include/ -I$(LIBUSB_INCLUDE) -I$(RTLSDR_INCLUDE)
-LDFLAGS+= -L/usr/local/lib -L$(LIBUSB_LIB) -L$(RTLSDR_LIB) -lrtlsdr -lusb-1.0 
-else
-#Conditional for Windows
-CFLAGS+=-I $(LIBUSB_INCLUDE) -I $(RTLSDR_INCLUDE)
-LDFLAGS+=-L$(LIBUSB_INCLUDE) -L$(RTLSDR_LIB) -L/usr/lib -lusb-1.0 -lrtlsdr -lWs2_32
-endif
-
-
+	#Conditional for Windows
+	CFLAGS+=-I $(LIBUSB_INCLUDE) -I $(RTLSDR_INCLUDE)
+	LDFLAGS+=-L$(LIBUSB_INCLUDE) -L$(RTLSDR_LIB) -L/usr/lib -lusb-1.0 -lrtlsdr -lWs2_32
 endif
 
 CC?=gcc

@@ -471,6 +471,7 @@ void rtl_ais_default_config(struct rtl_ais_config *config)
 	config->dc_filter=1;
         config->edge = 0;
         config->use_tcp_listener = 0, config->tcp_keep_ais_time = 15;
+		config->tcp_stream_forever = 0;
 	config->use_internal_aisdecoder=1;
 	config->seconds_for_decoder_stats=0;
         /* Aisdecoder */
@@ -589,7 +590,7 @@ struct rtl_ais_context *rtl_ais_start(struct rtl_ais_config *config)
 		}
 	}
 	else{ // Internal AIS decoder
-            int ret=init_ais_decoder(config->host,config->port,config->show_levels,config->debug_nmea,ctx->stereo.bl_len,config->seconds_for_decoder_stats, config->use_tcp_listener, config->tcp_keep_ais_time, config->add_sample_num);
+            int ret=init_ais_decoder(config->host,config->port,config->show_levels,config->debug_nmea,ctx->stereo.bl_len,config->seconds_for_decoder_stats, config->use_tcp_listener, config->tcp_keep_ais_time, config->tcp_stream_forever, config->add_sample_num);
 		if(ret != 0){
 			fprintf(stderr,"Error initializing built-in AIS decoder\n");
 			rtlsdr_cancel_async(ctx->dev);
@@ -648,7 +649,7 @@ int rtl_ais_isactive(struct rtl_ais_context *ctx)
 
 const char *rtl_ais_next_message(struct rtl_ais_context *ctx)
 {
-        ctx = ctx; //unused for now
+        (void)(ctx); //unused for now
         return aisdecoder_next_message();
 }
 
