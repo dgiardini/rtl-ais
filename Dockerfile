@@ -1,6 +1,5 @@
-# Can't use buster-slim because it needs librtlsdr-dev 0.5.3
-# See https://github.com/dgiardini/rtl-ais/issues/32
-FROM debian:stretch-slim
+
+FROM debian:bookworm-slim
 LABEL "name"="rtl-ais" \
   "description"="AIS ship decoding using an RTL-SDR dongle" \
   "author"="Bryan Klofas KF6ZEO"
@@ -11,17 +10,17 @@ WORKDIR $APP
 
 COPY . $APP
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get -y update && apt -y upgrade && apt-get -y install --no-install-recommends \
   rtl-sdr \
   librtlsdr-dev \
   libusb-1.0-0-dev \
   make \
   build-essential \
   pkg-config \
-  && make \ 
-  && apt-get remove -y make build-essential pkg-config \
-  && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/*
+  
+RUN make && \
+  make install
 
-CMD $APP/rtl_ais -n
+CMD ["/usr/src/app/rtl_ais", "-n"]
 
