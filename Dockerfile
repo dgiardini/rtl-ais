@@ -1,26 +1,47 @@
+# -------------------
+# The build container
+# -------------------
+FROM debian:bookworm-slim AS build
 
-FROM debian:bookworm-slim
-LABEL "name"="rtl-ais" \
-  "description"="AIS ship decoding using an RTL-SDR dongle" \
-  "author"="Bryan Klofas KF6ZEO"
+WORKDIR /usr/src/app
 
-ENV APP=/usr/src/app
+COPY . /usr/src/app
 
-WORKDIR $APP
-
-COPY . $APP
-
+# Upgrade bookworm and install dependencies
 RUN apt-get -y update && apt -y upgrade && apt-get -y install --no-install-recommends \
-  rtl-sdr \
-  librtlsdr-dev \
-  libusb-1.0-0-dev \
-  make \
-  build-essential \
-  pkg-config \
-  && rm -rf /var/lib/apt/lists/*
-  
-RUN make && \
-  make install
+    rtl-sdr \
+    librtlsdr-dev \
+    libusb-1.0-0-dev \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-CMD ["/usr/src/app/rtl_ais", "-n"]
+# Build rtl_ais
+RUN make && \
+    make install
+
+
+# -------------------------
+# The application container
+# -------------------------
+FROM debian:bookworm-slim
+
+LABEL org.opencontainers.image.title="rtl-ais"
+LABEL org.opencontainers.image.description="AIS decoding using RTL-SDR dongle"
+LABEL org.opencontainers.image.authors="Bryan Klofas KF6ZEO bklofas@gmail"
+LABEL org.opencontainers.image.source="https://github.com/bklofas/rtl-ais"
+
+# Upgrade bookworm and install dependencies
+RUN apt-get -y update && apt -y upgrade && apt-get -y install --no-install-recommends \
+    tini \
+    rtl-sdr \
+    librtlsdr-dev \
+    libusb-1.0-0-dev &&\
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /usr/src/app /app
+
+# Use tini as init.
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
+CMD ["/app/rtl_ais", "-n"]
 
