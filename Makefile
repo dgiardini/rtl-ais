@@ -1,7 +1,7 @@
-CFLAGS?=-O2 -g -Wall -W 
-CFLAGS+= -I./aisdecoder -I ./aisdecoder/lib -I./tcp_listener
-LDFLAGS+=-lpthread -lm  -L /usr/lib/arm-linux-gnueabihf/ 
-
+CFLAGS?=-O2 -g -Wall  
+CFLAGS+= -I./aisdecoder -I ./aisdecoder/lib -I./tcp_listener 
+LD_EXTRA_PATHS= -L /usr/lib/arm-linux-gnueabihf -L /usr/lib/i386-linux-gnu -L /usr/lib/x86_64-linux-gnu
+LDFLAGS+=-lpthread -lm $(LD_EXTRA_PATHS)
 ifeq ($(PREFIX),)
     PREFIX := /usr/local
 endif
@@ -9,7 +9,16 @@ UNAME := $(shell uname)
 ifeq ($(UNAME),Linux)
 #Conditional for Linux
 CFLAGS+= $(shell pkg-config --cflags librtlsdr)
-LDFLAGS+=$(shell pkg-config --libs librtlsdr)
+LD_LIBRTLSDR=$(shell pkg-config --libs librtlsdr)
+#Ugly hack. Check if the output of pkg-config is long enough to be valid
+LD_LIBRTLSDR_LENGTH := $(shell echo "$(LD_LIBRTLSDR)" | wc -c)
+ifeq ($(shell test $(LD_LIBRTLSDR_LENGTH) -gt 13; echo $$?),0)
+#The  pkg-config output seem to be ok, let's use it
+	LDFLAGS+=$(shell pkg-config --libs librtlsdr)
+else
+#The  pkg-config output seem to be too short, use the default lib name and default paths
+	LDFLAGS+=-lrtlsdr
+endif
 
 else
 #
@@ -28,8 +37,8 @@ LIBUSB_LIB=/tmp/libusb/lib
 
 ifeq ($(UNAME),Darwin)
 #Conditional for OSX
-CFLAGS+= -I/usr/local/include/ -I$(LIBUSB_INCLUDE) -I$(RTLSDR_INCLUDE)
-LDFLAGS+= -L/usr/local/lib -L$(LIBUSB_LIB) -L$(RTLSDR_LIB) -lrtlsdr -lusb-1.0 
+CFLAGS+= -I/usr/local/include/ -I/opt/homebrew/include -I$(LIBUSB_INCLUDE) -I$(RTLSDR_INCLUDE)
+LDFLAGS+= -L/usr/local/lib -L/opt/homebrew/lib -L$(LIBUSB_LIB) -L$(RTLSDR_LIB) -lrtlsdr -lusb-1.0 
 else
 #Conditional for Windows
 CFLAGS+=-I $(LIBUSB_INCLUDE) -I $(RTLSDR_INCLUDE)
@@ -65,6 +74,7 @@ clean:
 	rm -f $(OBJECTS) $(EXECUTABLE) $(EXECUTABLE).exe
 
 install:
-	install -d -m 755 $(DESTDIR)/$(PREFIX)/bin
-	install -m 755 $(EXECUTABLE) "$(DESTDIR)/$(PREFIX)/bin/"
+	install -d -m 755 $(PREFIX)/bin
+	install -m 755 $(EXECUTABLE) "$(PREFIX)/bin/"
+
 

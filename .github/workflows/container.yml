@@ -7,16 +7,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Set up QEMU
-      uses: docker/setup-qemu-action@v1
+      uses: docker/setup-qemu-action@v3.3.0
+      with:
+        image: tonistiigi/binfmt:qemu-v8.1.5
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v1
+      uses: docker/setup-buildx-action@v3
 
     - name: Cache Docker layers
-      uses: actions/cache@v2
+      id: cache-docker
+      uses: actions/cache@v4
       with:
         path: /tmp/.buildx-cache
         key: ${{ runner.os }}-buildx-${{ github.sha }}
@@ -25,19 +28,20 @@ jobs:
 
     - name: Log in to GHCR
       if: github.event_name != 'pull_request'
-      uses: docker/login-action@v1
+      uses: docker/login-action@v3
       with:
         registry: ghcr.io
         username: ${{ github.repository_owner }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+        password: ${{ secrets.RTLAIS_GITHUB_TOKEN }}
 
     - name: Build and push to ghcr
-      uses: docker/build-push-action@v2
+      uses: docker/build-push-action@v6
       with:
         context: .
         file: ./Dockerfile
-        platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v6,linux/arm/v7
+        platforms: linux/amd64,linux/arm64,linux/386,linux/arm/v6,linux/arm/v7
         push: ${{ github.event_name != 'pull_request' }}
+        outputs: type=image,name=target,annotation-index.org.opencontainers.image.description=AIS recevier using RTL-SDR dongle
         tags: |
           ghcr.io/bklofas/rtl-ais:latest
 
