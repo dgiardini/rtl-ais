@@ -123,7 +123,10 @@ void nmea_sentence_received(const char *sentence,
     append_message(sentence);
 
     if (sentences == 1) {
-        if (send_nmea( sentence, length) == -1) abort();
+        if (send_nmea( sentence, length) == -1){
+			fprintf(stderr,"Error sending UDP packet with NMEA message: %s\n", strerror(errno));
+			abort();
+		}
         if (debug_nmea) fprintf(stderr, "%s", sentence);
     } else {
         if (buffer_count + length < MAX_BUFFER_LENGTH) {
@@ -134,7 +137,10 @@ void nmea_sentence_received(const char *sentence,
         }
 
         if (sentences == sentencenum && buffer_count > 0) {
-            if (send_nmea( buffer, buffer_count) == -1) abort();
+            if (send_nmea( buffer, buffer_count) == -1){
+				fprintf(stderr,"Error sending UDP packet with NMEA message (buffer_count=%d):%s\n",buffer_count, strerror(errno));
+				abort();
+			}
             if (debug_nmea) fprintf(stderr, "%s", buffer);
             buffer_count=0;
         };
@@ -203,8 +209,27 @@ int free_ais_decoder(void)
 }
 
 
+
+/* Check if the host is broacast address. I suppose there are better options than this :-| */
+int isBroadcastAddress (const char *ipAddress) {
+    // Find the last dot in the IP address
+    const char *lastDot = strrchr(ipAddress, '.');
+    if (lastDot != NULL) {
+        // Extract the last octet after the dot
+        const char *lastOctet = lastDot + 1;
+        // Check if the last octet is "255"
+        if (strcmp(lastOctet, "255") == 0) {
+            return 1;  // Last digits are 255
+        }
+   }
+    return 0;  //Last digits are not 255
+}
+
+
+
 int initSocket(const char *host, const char *portname) {
     struct addrinfo hints;
+	int enable_broadcast=1;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family=AF_UNSPEC;
     hints.ai_socktype=SOCK_DGRAM;
@@ -212,7 +237,6 @@ int initSocket(const char *host, const char *portname) {
 #ifndef WIN32
     hints.ai_flags=AI_ADDRCONFIG;
 #else
-
     int iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (iResult != 0) {
         printf("WSAStartup failed: %d\n", iResult);
@@ -236,6 +260,14 @@ int initSocket(const char *host, const char *portname) {
 #endif
         return 0;
     }
+	if(isBroadcastAddress(host)){
+		fprintf(stderr, "Broadcast address detected. Setting SO_BROADCAST option to socket.\n");
+		  // Enable sending broadcast packets
+		if (setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &enable_broadcast, sizeof(enable_broadcast)) < 0) {
+			perror("Failed to set socket option SO_BROADCAST:");
+			exit(1);
+		}
+	}
 	fprintf(stderr,"AIS data will be sent to %s port %s\n",host,portname);
     return 1;
 }
