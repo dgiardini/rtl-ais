@@ -38,10 +38,10 @@ RUN apt-get -y update && apt -y upgrade && apt-get -y install --no-install-recom
     libusb-1.0-0-dev &&\
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /usr/src/app /app
+COPY --from=build /usr/src/app /
 
 # Use tini as init.
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
-CMD ["/app/rtl_ais", "-n"]
+CMD ["/rtl_ais", "-n"]
 
