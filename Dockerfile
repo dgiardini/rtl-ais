@@ -1,27 +1,47 @@
-# Can't use buster-slim because it needs librtlsdr-dev 0.5.3
-# See https://github.com/dgiardini/rtl-ais/issues/32
-FROM debian:stretch-slim
-LABEL "name"="rtl-ais" \
-  "description"="AIS ship decoding using an RTL-SDR dongle" \
-  "author"="Bryan Klofas KF6ZEO"
+# -------------------
+# The build container
+# -------------------
+FROM debian:bookworm-slim AS build
 
-ENV APP=/usr/src/app
+WORKDIR /usr/src/app
 
-WORKDIR $APP
+COPY . /usr/src/app
 
-COPY . $APP
+# Upgrade bookworm and install dependencies
+RUN apt-get -y update && apt -y upgrade && apt-get -y install --no-install-recommends \
+    rtl-sdr \
+    librtlsdr-dev \
+    libusb-1.0-0-dev \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update && apt-get install -y \
-  rtl-sdr \
-  librtlsdr-dev \
-  libusb-1.0-0-dev \
-  make \
-  build-essential \
-  pkg-config \
-  && make \ 
-  && apt-get remove -y make build-essential pkg-config \
-  && apt-get autoremove -y \
-  && rm -rf /var/lib/apt/lists/*
+# Build rtl_ais
+RUN make && \
+    make install
 
-CMD $APP/rtl_ais -n
+
+# -------------------------
+# The application container
+# -------------------------
+FROM debian:bookworm-slim
+
+LABEL org.opencontainers.image.title="rtl-ais"
+LABEL org.opencontainers.image.description="AIS decoding using RTL-SDR dongle"
+LABEL org.opencontainers.image.authors="Bryan Klofas KF6ZEO bklofas@gmail"
+LABEL org.opencontainers.image.source="https://github.com/bklofas/rtl-ais"
+
+# Upgrade bookworm and install dependencies
+RUN apt-get -y update && apt -y upgrade && apt-get -y install --no-install-recommends \
+    tini \
+    rtl-sdr \
+    librtlsdr-dev \
+    libusb-1.0-0-dev &&\
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /usr/src/app /
+
+# Use tini as init.
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
+CMD ["/rtl_ais", "-n"]
 

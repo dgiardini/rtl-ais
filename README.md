@@ -104,13 +104,14 @@ of rtl-ais.
 
 Docker Container
 ----------------
-Now you can run rtl-ais in a docker container. No dependencies to install. Total container size is approximately 75 MB. Get/install docker [here](https://docs.docker.com/get-docker/).
+Now you can run rtl-ais in a docker container. No dependencies to install. Total container size is 55 to 75 MB, depending on the host architecture. Get/install docker [here](https://docs.docker.com/get-docker/).
 
 Two options for obtaining the container: Either download and run a pre-built container, or build the container locally.
 
  1. Just to test things out: `docker run -it --rm --device=/dev/bus/usb ghcr.io/bklofas/rtl-ais:latest`
     * This downloads a pre-built container from the Github container registry.
-    * This image will run by default `./rtl_ais -n`, showing the received packets on STDOUT. All other default values.
+    * Architectures supported are i386, amd64, arm32v6, arm32v7, and arm64. Tested on amd64, arm32v7, and arm64. arm packages run on all RaspberryPi flavors. Your client will automatically download the appropriate architecture.
+    * This image will run by default `./rtl_ais -n`, showing the received packets on STDOUT. Uses all other default values.
     * You can add other ./rtl-sdr options, see below.
     * Make sure at least one RTL-SDR dongle is connected.
     * Startup messages and decoded packets will display in the terminal.
@@ -120,22 +121,24 @@ Two options for obtaining the container: Either download and run a pre-built con
  1. For a more permanent setup, run the container in the background and add any options you want: `docker run -d --name rtl-ais --restart=unless-stopped --log-driver=local --network=host --device=/dev/bus/usb ghcr.io/bklofas/rtl-ais:latest ./rtl_ais -n -d 00000002 -h 127.0.0.1 -P 10110`
     * -d: Start this container in daemon/background mode.
     * --name: Name this anything you want.
-    * --restart=unless-stopped: Automatically restart the container if something happens (reboot, USB problem), unless you have manually stopped the container (with `docker stop rtl-ais`).
+    * --restart=unless-stopped: Automatically restart the container if something happens (reboot, USB problem), unless you have manually stopped the container.
     * --log-driver=local: By default, docker uses the json log driver which may fill up your harddrive, depending on how busy your station is. `local` log driver defaults to 100MB of saved logs, and automatically rotates them.
     * --network=host: Allows the container to talk to the internet, if you are sending the packets to an online service.
     * --device=: Allows the container to talk to the USB bus to access the RTL-SDR dongle.
-    * ./rtl_ais: Same command-line options as above.
+    * ./rtl_ais: Same command-line options as non-containerized.
     * View the startup messages and decoded packets with `docker logs --follow rtl-ais`
+    * Stop the container with `docker stop rtl-ais`
 
 Building the container:
 
- * `git clone https://github.com/bklofas/rtl-ais.git` the repository, then from the folder `docker build -t rtl-ais .`
- *  Or, build the container without cloning the repository: `docker build https://github.com/bklofas/rtl-ais.git`
+ * Clone the repository with `git clone https://github.com/dgiardini/rtl-ais.git` , then from the folder `docker build -t rtl-ais .`
+ *  Or, build the container without cloning the repository: `docker build https://github.com/dgiardini/rtl-ais.git`
 
 Other tips and tricks:
 
  * If you have the `-n` flag, view the decoded AIS packets in real-time with `docker logs --follow rtl-ais`
- * If you are only sending packets to one internet service (such as marinetraffic.com), you can use the `-h` and `-P` options that they send you.
+ * If you are only sending packets to one internet service (such as marinetraffic.com), you can use the `-h` and `-P` options that they provide.
+ * You are encouraged to send your decoded packets to multiple online services. Check out AIS packet multiplexer [kplex](http://www.stripydog.com/kplex/), pre-built containers are available [here](https://ghcr.io/bklofas/kplex).
 
 
 Testing
